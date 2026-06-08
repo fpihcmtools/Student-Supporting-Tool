@@ -1085,6 +1085,7 @@ function onRosterSearch() {
     if (State.user.rawRole === 'GV') {
         const ucode = State.user.code.toLowerCase();
         const uname = State.user.name.toLowerCase();
+        console.log('${ucode}');
         results = results.filter(r => {
             if (!r.giang_vien) return false;
             const gvStr = r.giang_vien.toLowerCase();
