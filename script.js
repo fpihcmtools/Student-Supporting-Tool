@@ -1052,7 +1052,7 @@ async function loadRoster() {
     if (!error && data) {
         rosterCache = data;
         rosterLoaded = true;
-        console.log(`📋 Roster loaded: ${data.length} SV`);
+        console.log(`📋 Roster loaded: ${data.length} SV Q Testing`);
     } else {
         console.warn('⚠️ Không tải được roster:', error);
     }
