@@ -1082,7 +1082,7 @@ function onRosterSearch() {
     }
 
     // BẢO MẬT: Giảng viên chỉ được tìm sinh viên thuộc lớp mình dạy (dựa vào roster giang_vien)
-    if (State.user.rawRole == 'GV') {
+    if (State.user.rawRole === 'GV') {
         const ucode = State.user.code.toLowerCase();
         const uname = State.user.name.toLowerCase();
         console.log('${ucode}');
