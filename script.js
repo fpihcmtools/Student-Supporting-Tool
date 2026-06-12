@@ -301,13 +301,19 @@ async function initDashboard() {
 // Đếm số SV theo từng trạng thái và cập nhật vào 4 thẻ stat
 function updateStats() {
     const all = State.students;
-    document.getElementById('cntTotal').textContent = all.length;
+    //document.getElementById('cntTotal').textContent = all.length;
     document.getElementById('cntGreen').textContent = all.filter(s => (s.status || 'green') === 'green').length;
-    //document.getElementById('cntYellow').textContent = all.filter(s => s.status === 'yellow').length;
-    //document.getElementById('cntRed').textContent = all.filter(s => s.status === 'red').length;
 
-    document.getElementById('cntYellow').textContent = all.filter(s => (s.status === 'yellow' && s.giang_vien.toLowerCase().includes(State.user.code.split('_')[1].toLowerCase()))).length;
-    document.getElementById('cntRed').textContent = all.filter(s => (s.status === 'red' && s.giang_vien.toLowerCase().includes(State.user.code.split('_')[1].toLowerCase()))).length;
+    if(State.user.rawRole === 'GV'){
+		document.getElementById('cntTotal').textContent = all.filter(s => (s.giang_vien.toLowerCase().includes(State.user.code.split('_')[1].toLowerCase()))).length;
+		document.getElementById('cntYellow').textContent = all.filter(s => (s.status === 'yellow' && s.giang_vien.toLowerCase().includes(State.user.code.split('_')[1].toLowerCase()))).length;
+		document.getElementById('cntRed').textContent = all.filter(s => (s.status === 'red' && s.giang_vien.toLowerCase().includes(State.user.code.split('_')[1].toLowerCase()))).length;
+	}
+	else{
+		document.getElementById('cntTotal').textContent = all.length;
+		document.getElementById('cntYellow').textContent = all.filter(s => s.status === 'yellow').length;
+		document.getElementById('cntRed').textContent = all.filter(s => s.status === 'red').length;
+	}
 }
 
 // Lấy tất cả tên lớp từ DB.students (SV có thể thuộc nhiều lớp),
