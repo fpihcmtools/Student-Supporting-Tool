@@ -320,7 +320,7 @@ function populateClassFilter() {
 
     const set = new Set();
     const isGV = State.user && State.user.rawRole === 'GV';
-    const ucode = isGV ? State.user.code.toLowerCase() : '';
+    const ucode = isGV ? State.user.code.split('_')[1].toLowerCase() : '';
     const uname = isGV ? State.user.name.toLowerCase() : '';
 
     const processRoster = (r) => {
@@ -445,7 +445,7 @@ function renderStudents() {
 
     // BẢO MẬT: Giảng viên chỉ được xem sinh viên thuộc lớp mình dạy (dựa vào roster giang_vien)
     if (State.user.rawRole === 'GV') {
-        const ucode = State.user.code.toLowerCase();
+        const ucode = State.user.code.split('_')[1].toLowerCase();
         const uname = State.user.name.toLowerCase();
         list = list.filter(s => {
             if (!s.giang_vien) return false;
@@ -1207,7 +1207,7 @@ async function createStudent() {
     }
 
     if (State.user.rawRole === 'GV') {
-        const ucode = State.user.code.toLowerCase();
+        const ucode = State.user.code.split('_')[1].toLowerCase();
         const uname = State.user.name.toLowerCase();
         const gvStr = (State.rosterSelected.giang_vien || '').toLowerCase();
         if (!gvStr.includes(ucode) && !gvStr.includes(uname)) {
@@ -1755,7 +1755,7 @@ function getTargetStudentsForNotif() {
         });
 
     if (State.user && State.user.rawRole === 'GV') {
-        const ucode = State.user.code.toLowerCase();
+        const ucode = State.user.code.split('_')[1].toLowerCase();
         const uname = State.user.name.toLowerCase();
         targetStudents = targetStudents.filter(s => {
             if (!s.giang_vien) return false;
@@ -2008,7 +2008,7 @@ async function generateReport() {
 
     // Bước 3a: Với GV — bắt buộc lọc chỉ hiển thị SV do mình dạy (có tên trong roster)
     if (role === 'GV') {
-        const ucode = State.user.code.toLowerCase();
+        const ucode = State.user.code.split('_')[1].toLowerCase();
         const uname = State.user.name.toLowerCase();
         rows = rows.filter(r => {
             if (!r.student.giang_vien) return false;
