@@ -202,6 +202,7 @@ async function login() {
 }
 
 function logout() {
+	localStorage.removeItem('srmh_access_code');
     State.reset();
     document.getElementById('loginScreen').classList.remove('hidden');
     document.getElementById('mainApp').classList.add('hidden');
@@ -210,6 +211,18 @@ function logout() {
     switchTab('dashboard', true); // silent=true: không gọi renderAnalytics/renderAdmin
     document.getElementById('notifBadge').classList.add('hidden');
 }
+
+async function restoreSession() {
+    const savedCode = localStorage.getItem('srmh_access_code');
+    if (!savedCode) return;
+
+    const input = document.getElementById('accessCode');
+    if (!input) return;
+    input.value = savedCode;
+    await login();
+}
+
+restoreSession();
 
 // ══════════════════════════════════════════════════════════════════
 //  SECTION 4 — STUDENT MODULE (Quản lý danh sách sinh viên)
