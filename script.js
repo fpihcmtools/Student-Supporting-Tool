@@ -133,11 +133,19 @@ async function login() {
 
     if (error || !acc) {
         console.error("Login lỗi:", error);
+		localStorage.removeItem('srmh_access_code');
         alert('❌ Mã truy cập không hợp lệ!');
         return;
     }
-    if (!acc.is_active) { alert('❌ Tài khoản đã bị vô hiệu hóa!'); return; }
-
+    if (!acc.is_active) { 
+		localStorage.removeItem('srmh_access_code');
+		alert('❌ Tài khoản đã bị vô hiệu hóa!'); 
+		return; 
+	}
+	
+	// Lưu mã để khôi phục phiên đăng nhập sau khi refresh trang.
+    localStorage.setItem('srmh_access_code', code);
+	
     // Lưu thông tin user đăng nhập vào State
     // Chuyển đổi tên trường raw_role (DB) thành rawRole (Client) cho khớp các lệnh if-else cũ
     // Đảm bảo chữ cái đầu luôn viết hoa (vd: admin -> Admin, ctsv -> CTSV) để không bị lỗi phân quyền case-sensitive
