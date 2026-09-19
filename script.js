@@ -67,6 +67,8 @@ const State = {
     charts: {},
     students: [],           // Cache danh sách sinh viên lấy từ db
     rosterSelected: null,   // SV đã chọn từ roster autocomplete (cho modal Thêm SV)
+    currentPage: 1,
+    pageSize: 10,
 
 
     // Dọn dẹp toàn bộ state về giá trị ban đầu
@@ -75,6 +77,7 @@ const State = {
         this.currentStudentId = null; this.replyParentId = null;
         this.pendingContent = null; this.foundStudentId = null;
         this.rosterSelected = null;
+        this.currentPage = 1;
         // Hủy tất cả Chart.js instance để tránh memory leak
         Object.values(this.charts).forEach(c => c && c.destroy && c.destroy());
         this.charts = {};
@@ -206,6 +209,11 @@ async function login() {
         }
     }
 
+    const addEscalateWrapper = document.getElementById('addEscalateCheckboxWrapper');
+    if (addEscalateWrapper) {
+        addEscalateWrapper.style.display = ['CTSV', 'Admin'].includes(State.user.rawRole) ? 'none' : 'flex';
+    }
+
     initDashboard();
 }
 
@@ -243,6 +251,7 @@ restoreSession();
 //  studentCard(s)        : tạo HTML cho 1 thẻ sinh viên
 // ══════════════════════════════════════════════════════════════════
 async function initDashboard() {
+    State.currentPage = 1;
     const listEl = document.getElementById('studentList');
     if (listEl) listEl.innerHTML = '<div class="text-center text-slate-400 py-16 text-sm">⏳ Đang tải dữ liệu từ Supabase...</div>';
 
@@ -399,7 +408,7 @@ function populateClassFilter() {
 
 function onMajorChange() {
     populateClassFilter();
-    renderStudents();
+    renderStudents(true);
 }
 
 // Lọc bộ môn dựa vào thuộc tính nganh lấy từ student_roster
@@ -445,7 +454,7 @@ function filterByStatus(s) {
     // Thêm highlight cho thẻ đang chọn
     const map = { all: ['statAll', 'ring-indigo-400'], green: ['statGreen', 'ring-emerald-400'], yellow: ['statYellow', 'ring-amber-400'], red: ['statRed', 'ring-rose-400'] };
     if (map[s]) document.getElementById(map[s][0]).classList.add('ring-2', map[s][1], 'shadow-md');
-    renderStudents();
+    renderStudents(true);
 }
 
 // Render danh sách SV với đầy đủ bộ lọc:
@@ -453,8 +462,10 @@ function filterByStatus(s) {
 // 2. Filter theo statusFilter (all / attention / green / yellow / red)
 // 3. Filter theo lớp học (classFilter dropdown)
 // 4. Filter theo từ khóa tìm kiếm (MSSV hoặc họ tên, case-insensitive)
-function renderStudents() {
+function renderStudents(resetPage = false) {
     const container = document.getElementById('studentList');
+    const pagination = document.getElementById('studentPagination');
+    if (resetPage) State.currentPage = 1;
     const search = document.getElementById('searchInput').value.toLowerCase();
     const classF = document.getElementById('classFilter').value;
     const majorF = document.getElementById('majorFilter') ? document.getElementById('majorFilter').value : 'all';
@@ -512,15 +523,48 @@ function renderStudents() {
 
     if (!list.length) {
         container.innerHTML = '<div class="text-center text-slate-400 py-16 text-sm">Không tìm thấy sinh viên nào</div>';
+        if (pagination) pagination.innerHTML = '';
         return;
     }
-    container.innerHTML = list.map(studentCard).join('');
+    const totalPages = Math.ceil(list.length / State.pageSize);
+    State.currentPage = Math.min(Math.max(State.currentPage, 1), totalPages);
+    const start = (State.currentPage - 1) * State.pageSize;
+    const pageItems = list.slice(start, start + State.pageSize);
+    container.innerHTML = pageItems.map((student, index) => studentCard(student, start + index + 1)).join('');
+    renderStudentPagination(list.length, totalPages);
+}
+
+function renderStudentPagination(totalItems, totalPages) {
+    const pagination = document.getElementById('studentPagination');
+    if (!pagination) return;
+    if (totalPages <= 1) {
+        pagination.innerHTML = `<span class="text-xs text-slate-400">Hiển thị ${totalItems} sinh viên</span>`;
+        return;
+    }
+    const start = (State.currentPage - 1) * State.pageSize + 1;
+    const end = Math.min(State.currentPage * State.pageSize, totalItems);
+    const pages = Array.from({ length: totalPages }, (_, index) => index + 1).map(page => `
+        <button onclick="goToStudentPage(${page})" class="student-page-btn ${page === State.currentPage ? 'active' : ''}">${page}</button>
+    `).join('');
+    pagination.innerHTML = `
+        <span class="text-xs text-slate-400">Hiển thị ${start}-${end} / ${totalItems} sinh viên</span>
+        <div class="flex items-center gap-1">
+            <button onclick="goToStudentPage(${State.currentPage - 1})" class="student-page-btn" ${State.currentPage === 1 ? 'disabled' : ''} aria-label="Trang trước">‹</button>
+            ${pages}
+            <button onclick="goToStudentPage(${State.currentPage + 1})" class="student-page-btn" ${State.currentPage === totalPages ? 'disabled' : ''} aria-label="Trang sau">›</button>
+        </div>`;
+}
+
+function goToStudentPage(page) {
+    State.currentPage = page;
+    renderStudents();
+    document.getElementById('studentList')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 // Tạo HTML string cho một thẻ sinh viên trong danh sách.
 // Bao gồm: dải màu status, MSSV, tên, badge "Mới" (nếu cập nhật trong 30 phút),
 // lớp học, preview phản hồi gần nhất, thời gian cập nhật.
-function studentCard(s) {
+function studentCard(s, rowNumber) {
     const st = s.status || 'green';
     const strip = { green: 'strip-green', yellow: 'strip-yellow', red: 'strip-red' }[st];
     const badge = { green: 'bg-emerald-100 text-emerald-700', yellow: 'bg-amber-100 text-amber-700', red: 'bg-rose-100 text-rose-700' }[st];
@@ -558,6 +602,7 @@ function studentCard(s) {
         <!-- Dải màu trạng thái bên trái -->
         <div class="${strip} w-1.5 shrink-0"></div>
         <div class="flex-1 p-3.5 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 min-w-0">
+            <div class="w-7 shrink-0 text-center text-xs font-bold text-slate-300" aria-label="Số thứ tự">${rowNumber}</div>
             <!-- MSSV -->
             <div class="sm:w-24 shrink-0">
                 <p class="font-mono text-xs font-bold text-slate-400">${s.mssv}</p>
@@ -1212,6 +1257,7 @@ async function openAddStudentModal() {
 
     document.getElementById('initialFeedback').value = '';
     document.getElementById('initialStatus').value = '';
+    document.getElementById('addEscalateCheckbox').checked = false;
     document.getElementById('duplicateWarning').classList.add('hidden');
 
     document.getElementById('addStudentModal').classList.add('active');
@@ -1246,7 +1292,7 @@ async function createStudent() {
         }
     }
 
-    const feedback = document.getElementById('initialFeedback').value.trim();
+    let feedback = document.getElementById('initialFeedback').value.trim();
     if (!feedback) {
         alert('Vui lòng nhập Feedback / Lý do thêm vào danh sách chăm sóc.');
         document.getElementById('initialFeedback').focus();
@@ -1258,6 +1304,10 @@ async function createStudent() {
         alert('Vui lòng chọn Trạng thái ban đầu.');
         document.getElementById('initialStatus').focus();
         return;
+    }
+
+    if (document.getElementById('addEscalateCheckbox').checked) {
+        feedback = '[CẦN CTSV HỖ TRỢ] ' + feedback;
     }
 
     const mssv = State.rosterSelected.mssv;
