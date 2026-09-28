@@ -68,7 +68,7 @@ const State = {
     students: [],           // Cache danh sách sinh viên lấy từ db
     rosterSelected: null,   // SV đã chọn từ roster autocomplete (cho modal Thêm SV)
     currentPage: 1,
-    pageSize: 10,
+    pageSize: 50,
 
 
     // Dọn dẹp toàn bộ state về giá trị ban đầu
