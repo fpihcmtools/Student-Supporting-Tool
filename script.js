@@ -523,6 +523,7 @@ function renderStudents(resetPage = false) {
 
     if (!list.length) {
         container.innerHTML = '<div class="text-center text-slate-400 py-16 text-sm">Không tìm thấy sinh viên nào</div>';
+        document.getElementById('studentPaginationTop').innerHTML = '';
         if (pagination) pagination.innerHTML = '';
         return;
     }
@@ -535,10 +536,15 @@ function renderStudents(resetPage = false) {
 }
 
 function renderStudentPagination(totalItems, totalPages) {
-    const pagination = document.getElementById('studentPagination');
-    if (!pagination) return;
+    const paginations = [
+        document.getElementById('studentPaginationTop'),
+        document.getElementById('studentPagination')
+    ].filter(Boolean);
+    if (!paginations.length) return;
     if (totalPages <= 1) {
-        pagination.innerHTML = `<span class="text-xs text-slate-400">Hiển thị ${totalItems} sinh viên</span>`;
+        paginations.forEach(pagination => {
+            pagination.innerHTML = `<span class="text-xs text-slate-400">Hiển thị ${totalItems} sinh viên</span>`;
+        });
         return;
     }
     const start = (State.currentPage - 1) * State.pageSize + 1;
@@ -546,13 +552,14 @@ function renderStudentPagination(totalItems, totalPages) {
     const pages = Array.from({ length: totalPages }, (_, index) => index + 1).map(page => `
         <button onclick="goToStudentPage(${page})" class="student-page-btn ${page === State.currentPage ? 'active' : ''}">${page}</button>
     `).join('');
-    pagination.innerHTML = `
+    const paginationHtml = `
         <span class="text-xs text-slate-400">Hiển thị ${start}-${end} / ${totalItems} sinh viên</span>
         <div class="flex items-center gap-1">
             <button onclick="goToStudentPage(${State.currentPage - 1})" class="student-page-btn" ${State.currentPage === 1 ? 'disabled' : ''} aria-label="Trang trước">‹</button>
             ${pages}
             <button onclick="goToStudentPage(${State.currentPage + 1})" class="student-page-btn" ${State.currentPage === totalPages ? 'disabled' : ''} aria-label="Trang sau">›</button>
         </div>`;
+    paginations.forEach(pagination => { pagination.innerHTML = paginationHtml; });
 }
 
 function goToStudentPage(page) {
@@ -2485,10 +2492,37 @@ async function handleExcelUpload(event) {
 
                 for (let i = 0; i < finalRows.length; i += BATCH_SIZE) {
                     const batch = finalRows.slice(i, i + BATCH_SIZE);
+                    const { data: existingRows, error: fetchError } = await supabase
+                        .from('student_roster')
+                        .select('mssv, lop, ma_mon, giang_vien, nganh')
+                        .in('mssv', batch.map(student => student.mssv));
+
+                    if (fetchError) {
+                        console.error('Lỗi khi tải dữ liệu roster hiện tại:', fetchError);
+                        throw new Error(`Lỗi tải dữ liệu hiện tại: ${fetchError.message}`);
+                    }
+
+                    const existingByMssv = new Map((existingRows || []).map(student => [student.mssv, student]));
+                    const fieldsToMerge = ['lop', 'ma_mon', 'giang_vien', 'nganh'];
+                    const mergedBatch = batch.map(student => {
+                        const existing = existingByMssv.get(student.mssv);
+                        if (!existing) return student;
+
+                        const mergedStudent = { ...student };
+                        fieldsToMerge.forEach(field => {
+                            const values = new Set(
+                                [existing[field], student[field]]
+                                    .filter(Boolean)
+                                    .flatMap(value => String(value).split(',').map(item => item.trim()).filter(Boolean))
+                            );
+                            mergedStudent[field] = values.size ? Array.from(values).join(', ') : null;
+                        });
+                        return mergedStudent;
+                    });
 
                     const { error } = await supabase
                         .from('student_roster')
-                        .upsert(batch, { onConflict: 'mssv' });
+                        .upsert(mergedBatch, { onConflict: 'mssv' });
 
                     if (error) {
                         console.error('Lỗi khi tải dữ liệu lên Supabase:', error);
