@@ -84,6 +84,8 @@ const State = {
     }
 };
 
+const CTSV_DEADLINE_DAYS = 5;
+
 // ══════════════════════════════════════════════════════════════════
 //  SECTION 3 — AUTH MODULE (Xác thực người dùng)
 //
@@ -297,6 +299,19 @@ async function initDashboard() {
 
         // Lấy feedback gần nhất làm preview
         const fbs = (s.feedbacks || []).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        const latestCtsvRequest = fbs.find(fb => {
+            const content = fb.content || '';
+            const isCtsvRequest = content.includes('[CẦN CTSV HỖ TRỢ]') || content.includes('[CTSV ĐÃ XỬ LÝ]');
+            const isDuplicate = (fb.reactions || []).some(reaction => reaction.type === 'is_duplicate_agree');
+            return isCtsvRequest && !isDuplicate;
+        });
+        const latestCtsvStatus = latestCtsvRequest
+            ? latestCtsvRequest.content.includes('[CTSV ĐÃ XỬ LÝ]')
+                ? 'processed'
+                : Date.now() - new Date(latestCtsvRequest.created_at).getTime() >= CTSV_DEADLINE_DAYS * 24 * 60 * 60 * 1000
+                    ? 'overdue'
+                    : 'pending'
+            : null;
 
         return {
             ...s,
@@ -305,7 +320,8 @@ async function initDashboard() {
             giang_vien: gvStr,
             nganh: nganh,
             latestFbContent: fbs[0] ? fbs[0].content : null,
-            latestFbCreatedAt: fbs[0] ? fbs[0].created_at : null
+            latestFbCreatedAt: fbs[0] ? fbs[0].created_at : null,
+            latestCtsvStatus
         };
     });
 
@@ -591,6 +607,26 @@ function studentCard(s, rowNumber) {
     // Lấy feedback gần nhất để preview từ trường đã map sẵn ở initDashboard
     const latestFbText = s.latestFbContent;
     const preview = latestFbText ? (latestFbText.length > 70 ? latestFbText.slice(0, 70) + '…' : latestFbText) : 'Chưa có phản hồi';
+    const ctsvStatus = {
+        pending: {
+            label: 'CTSV chưa xử lý',
+            className: 'text-amber-500',
+            icon: '<circle cx="12" cy="12" r="9"/><path d="M12 8v5m0 3h.01"/>'
+        },
+        processed: {
+            label: 'CTSV đã xử lý',
+            className: 'text-emerald-600',
+            icon: '<circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16 9"/>'
+        },
+        overdue: {
+            label: `CTSV trễ hạn xử lý (quá ${CTSV_DEADLINE_DAYS} ngày)`,
+            className: 'text-rose-600',
+            icon: '<path d="M10.3 3.9 2.7 17a2 2 0 0 0 1.7 3h15.2a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4m0 3h.01"/>'
+        }
+    }[s.latestCtsvStatus];
+    const ctsvStatusHtml = ctsvStatus
+        ? `<span class="inline-flex items-center ${ctsvStatus.className}" title="${ctsvStatus.label}" aria-label="${ctsvStatus.label}"><svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ctsvStatus.icon}</svg></span>`
+        : '';
 
     // Hiển thị ngành đối với Admin và CTSV
     let majorsHtml = '';
@@ -631,6 +667,7 @@ function studentCard(s, rowNumber) {
             ${majorsHtml ? `<div class="hidden lg:flex items-center gap-1.5 shrink-0 ml-2">${majorsHtml}</div>` : ''}
             <!-- Badge trạng thái + thời gian cập nhật -->
             <div class="flex items-center gap-2 shrink-0">
+                ${ctsvStatusHtml}
                 <span class="text-xs font-semibold px-2.5 py-1 rounded-full ${badge}">${emoji} ${label}</span>
                 <span class="text-xs text-slate-300 hidden sm:inline">⏱️ ${timeAgo(latestTime)}</span>
             </div>
