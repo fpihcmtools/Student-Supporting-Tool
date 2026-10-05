@@ -84,7 +84,22 @@ const State = {
     }
 };
 
-const CTSV_DEADLINE_DAYS = 5;
+const CTSV_DEADLINE_DAYS = 3;
+
+function getCtsvDeadlineDays(feedback) {
+    const major = feedback?.accounts?.major || '';
+    return major.split(',').some(item => item.trim().toLowerCase() === 'english') ? 2 : CTSV_DEADLINE_DAYS;
+}
+
+function shouldEscalateForAlertStudent(status, checkboxId) {
+    const checkbox = document.getElementById(checkboxId);
+    if (checkbox?.checked) return true;
+    if (State.user?.rawRole !== 'GV' || status !== 'red') return false;
+
+    const confirmed = confirm('Sinh viên đang ở trạng thái Cảnh báo. Bạn có muốn nhờ CTSV hỗ trợ không?');
+    if (confirmed && checkbox) checkbox.checked = true;
+    return confirmed;
+}
 
 // ══════════════════════════════════════════════════════════════════
 //  SECTION 3 — AUTH MODULE (Xác thực người dùng)
@@ -263,7 +278,7 @@ async function initDashboard() {
         .select(`
             *,
             student_classes(class_name, author_code),
-            feedbacks(id, content, created_at, role, author_code, reactions, parent_id)
+            feedbacks(id, content, created_at, role, author_code, reactions, parent_id, accounts(major))
         `)
         .order('updated_at', { ascending: false });
 
@@ -308,7 +323,7 @@ async function initDashboard() {
         const latestCtsvStatus = latestCtsvRequest
             ? latestCtsvRequest.content.includes('[CTSV ĐÃ XỬ LÝ]')
                 ? 'processed'
-                : Date.now() - new Date(latestCtsvRequest.created_at).getTime() >= CTSV_DEADLINE_DAYS * 24 * 60 * 60 * 1000
+                : Date.now() - new Date(latestCtsvRequest.created_at).getTime() >= getCtsvDeadlineDays(latestCtsvRequest) * 24 * 60 * 60 * 1000
                     ? 'overdue'
                     : 'pending'
             : null;
@@ -321,6 +336,7 @@ async function initDashboard() {
             nganh: nganh,
             latestFbContent: fbs[0] ? fbs[0].content : null,
             latestFbCreatedAt: fbs[0] ? fbs[0].created_at : null,
+            latestCtsvDeadlineDays: latestCtsvRequest ? getCtsvDeadlineDays(latestCtsvRequest) : CTSV_DEADLINE_DAYS,
             latestCtsvStatus
         };
     });
@@ -619,7 +635,7 @@ function studentCard(s, rowNumber) {
             icon: '<circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16 9"/>'
         },
         overdue: {
-            label: `CTSV trễ hạn xử lý (quá ${CTSV_DEADLINE_DAYS} ngày)`,
+            label: `CTSV trễ hạn xử lý (quá ${s.latestCtsvDeadlineDays || CTSV_DEADLINE_DAYS} ngày)`,
             className: 'text-rose-600',
             icon: '<path d="M10.3 3.9 2.7 17a2 2 0 0 0 1.7 3h15.2a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4m0 3h.01"/>'
         }
@@ -732,15 +748,23 @@ async function renderTimeline(studentId) {
 
     // Tách roots (parent_id = null) và replies, sort thời gian
     const visibleFbs = allFbs.filter(f => !f.reactions || !f.reactions.some(r => r.type === 'is_duplicate_agree'));
+    const latestByAuthor = new Map();
+    visibleFbs.forEach(fb => {
+        if (!fb.author_code) return;
+        const latest = latestByAuthor.get(fb.author_code);
+        if (!latest || new Date(fb.created_at) >= new Date(latest.created_at)) {
+            latestByAuthor.set(fb.author_code, fb);
+        }
+    });
     const roots = visibleFbs.filter(f => !f.parent_id)
         .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
     el.innerHTML = roots.map(fb => {
         const replies = visibleFbs.filter(r => r.parent_id === fb.id)
             .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-        return fbCard(fb, false) +
+        return fbCard(fb, false, latestByAuthor.get(fb.author_code)?.id === fb.id) +
             (replies.length
-                ? `<div class="ml-7 pl-3 border-l-2 border-slate-200 space-y-2 mt-1.5">${replies.map(r => fbCard(r, true)).join('')}</div>`
+                ? `<div class="ml-7 pl-3 border-l-2 border-slate-200 space-y-2 mt-1.5">${replies.map(r => fbCard(r, true, latestByAuthor.get(r.author_code)?.id === r.id)).join('')}</div>`
                 : '');
     }).join('');
 }
@@ -754,7 +778,7 @@ async function renderTimeline(studentId) {
 // Logic nút reaction (tim):
 // – Nếu là feedback của chính mình: chỉ hiện số react, không có nút
 // – Nếu là feedback người khác: nút toggle reaction, đổi icon ❤️/🤍
-function fbCard(fb, isReply) {
+function fbCard(fb, isReply, isLatestByAuthor) {
     const isGV = fb.role === 'GV';
     const isCNBM = fb.role === 'CNBM';
     const bg = isGV ? 'bg-blue-50 border-blue-100' : isCNBM ? 'bg-purple-50 border-purple-100' : 'bg-emerald-50 border-emerald-100';
@@ -807,6 +831,8 @@ function fbCard(fb, isReply) {
         (State.user.rawRole === 'CNBM' && (isMyFb || isSameMajor)) ||
         (State.user.rawRole === 'GV' && isMyFb)
     );
+    const canEdit = (isMyFb || State.user.rawRole === 'Admin') &&
+        isLatestByAuthor && !fb.content?.includes('[CTSV ĐÃ XỬ LÝ]');
 
     return `
     <div class="tl-item">
@@ -822,6 +848,7 @@ function fbCard(fb, isReply) {
             <p class="text-slate-700 text-sm whitespace-pre-wrap leading-relaxed">${finalContent}</p>
             <div class="flex items-center justify-end gap-3 mt-2 pt-2 border-t border-white/60">
                 ${resolveBtn}
+                ${canEdit ? `<button onclick="editFeedback(${fb.id}, ${fb.student_id})" class="text-xs text-slate-400 hover:text-indigo-600 transition">✏️ Sửa</button>` : ''}
                 <!-- Nút "Trả lời" chỉ hiện ở feedback gốc, không hiện ở reply -->
                 ${!isReply ? `<button onclick="replyTo(${fb.id},'${fb.author_name}')" class="text-xs text-slate-400 hover:text-indigo-600 transition">↪️ Trả lời</button>` : ''}
                 <!-- Nút "Cùng ý kiến" chỉ hiện ở feedback gốc, không phải của chính mình, và chỉ dành cho GV/CNBM -->
@@ -893,9 +920,57 @@ async function sendFeedback() {
     const content = document.getElementById('feedbackInput').value.trim();
     if (!content || !State.currentStudentId) return;
 
+    const student = State.students.find(item => item.id === State.currentStudentId);
+    shouldEscalateForAlertStudent(student?.status, 'escalateCheckbox');
+
     // Giảng viên tiếp theo không cần nhập lớp đang dạy nữa vì thông tin lớp đã hiện đầy đủ từ danh sách kỳ học.
     await doSend(content);
 }
+
+window.editFeedback = async (fbId, studentId) => {
+    const { data: feedback, error: fetchError } = await supabase
+        .from('feedbacks')
+        .select('content, author_code')
+        .eq('id', fbId)
+        .single();
+    if (fetchError || !feedback) return alert('Không thể tải feedback để sửa.');
+    if (feedback.author_code !== State.user.code && State.user.rawRole !== 'Admin') {
+        return alert('Bạn chỉ có thể sửa feedback của mình.');
+    }
+    if (feedback.content?.includes('[CTSV ĐÃ XỬ LÝ]')) {
+        return alert('Không thể sửa feedback CTSV đã xử lý.');
+    }
+
+    const { data: authorFeedbacks, error: latestError } = await supabase
+        .from('feedbacks')
+        .select('id, reactions')
+        .eq('student_id', studentId)
+        .eq('author_code', feedback.author_code)
+        .order('created_at', { ascending: false });
+    const latestFeedback = (authorFeedbacks || []).find(item =>
+        !(item.reactions || []).some(reaction => reaction.type === 'is_duplicate_agree')
+    );
+    if (latestError || latestFeedback?.id !== fbId) {
+        return alert('Chỉ có thể sửa feedback mới nhất của tác giả này.');
+    }
+
+    const markers = ['[CẦN CTSV HỖ TRỢ]', '[CTSV ĐÃ XỬ LÝ]', '[GHI CHÚ XỬ LÝ]']
+        .filter(marker => (feedback.content || '').includes(marker));
+    const editableContent = markers.reduce((text, marker) => text.replaceAll(marker, '').trim(), feedback.content || '');
+    const updatedText = prompt('Sửa nội dung feedback:', editableContent);
+    if (updatedText === null) return;
+    if (!updatedText.trim()) return alert('Nội dung feedback không được để trống.');
+
+    const updatedContent = [...markers, updatedText.trim()].join(' ');
+    const { error: updateError } = await supabase
+        .from('feedbacks')
+        .update({ content: updatedContent })
+        .eq('id', fbId);
+    if (updateError) return alert('Lỗi cập nhật feedback: ' + updateError.message);
+
+    await renderTimeline(studentId);
+    await initDashboard();
+};
 
 // Xử lý CTSV Đánh dấu đã giải quyết
 async function resolveEscalation(fbId, studentId) {
@@ -1350,10 +1425,6 @@ async function createStudent() {
         return;
     }
 
-    if (document.getElementById('addEscalateCheckbox').checked) {
-        feedback = '[CẦN CTSV HỖ TRỢ] ' + feedback;
-    }
-
     const mssv = State.rosterSelected.mssv;
     const name = State.rosterSelected.ho_ten;
     const lop = State.rosterSelected.lop || '';
@@ -1378,6 +1449,11 @@ async function createStudent() {
         closeAddStudentModal();
         openStudentModal(dupData.id);
         return;
+    }
+
+    shouldEscalateForAlertStudent(initialStatus, 'addEscalateCheckbox');
+    if (document.getElementById('addEscalateCheckbox').checked) {
+        feedback = '[CẦN CTSV HỖ TRỢ] ' + feedback;
     }
 
     // 2. Insert vào bảng students
